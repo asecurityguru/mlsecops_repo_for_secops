@@ -1,0 +1,98 @@
+name: Model Scan Security Scan
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  modelscan:
+    name: Model Scan - ModelScan (known-bad operators)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ModelScan
+        run: pip install modelscan
+
+      - name: Run ModelScan against models directory
+        run: |
+          if [ -d "models" ]; then
+            modelscan -p models -r json -o modelscan-results.json
+          else
+            echo "No models directory found, skipping."
+            echo '{"summary": {"total_issues": 0}, "issues": [], "errors": []}' > modelscan-results.json
+          fi
+        continue-on-error: true
+
+      - name: Convert ModelScan JSON to SARIF
+        run: python .github/scripts/modelscan_to_sarif.py
+        continue-on-error: true
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: modelscan-results.sarif
+          category: modelscan
+
+  fickling:
+    name: Model Scan - Fickling (pickle opcode analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Fickling
+        run: pip install fickling
+
+      - name: Find pickle files and run Fickling on each
+        run: |
+          mkdir -p fickling-reports
+          pickle_files=""
+          if [ -d "models" ]; then
+            pickle_files=$(find models -type f \( -name "*.pkl" -o -name "*.pickle" -o -name "*.pt" -o -name "*.pth" -o -name "*.bin" \) 2>/dev/null)
+          fi
+
+          for f in $pickle_files; do
+            safe_name=$(echo "$f" | tr '/.' '__')
+            python3 -m fickling --check-safety \
+              --json-output "fickling-reports/${safe_name}.json" \
+              "$f" || true
+            python3 .github/scripts/fickling_tag_source.py "$f" "fickling-reports/${safe_name}.json"
+          done
+        continue-on-error: true
+
+      - name: Convert Fickling JSON reports to SARIF
+        run: python .github/scripts/fickling_to_sarif.py
+        continue-on-error: true
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: fickling-results.sarif
+          category: fickling
+
+  model-scan-summary:
+    name: Model Scan Summary
+    runs-on: ubuntu-latest
+    needs: [modelscan, fickling]
+    if: always()
+    steps:
+      - name: Report model scan status
+        run: |
+          echo "## Model Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- ModelScan (known-bad operator denylist): ${{ needs.modelscan.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Fickling (pickle opcode structural analysis): ${{ needs.fickling.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "Findings are available under the repo's Security > Code scanning tab." >> $GITHUB_STEP_SUMMARY

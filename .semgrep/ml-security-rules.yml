@@ -1,0 +1,78 @@
+rules:
+  - id: unsafe-pickle-load
+    languages: [python]
+    severity: ERROR
+    message: >
+      Loading a model or data file with pickle.load()/torch.load() can execute
+      arbitrary code if the file is untrusted or attacker-controlled. Prefer
+      safetensors or joblib with format validation, or load with
+      weights_only=True for torch.load().
+    patterns:
+      - pattern-either:
+          - pattern: pickle.load(...)
+          - pattern: pickle.loads(...)
+          - pattern: torch.load($FILE)
+    metadata:
+      category: supply-chain
+      owasp-llm: LLM05 (Supply Chain Vulnerabilities)
+ 
+  - id: eval-or-exec-on-llm-output
+    languages: [python]
+    severity: ERROR
+    message: >
+      eval()/exec() applied to data that may originate from an LLM response
+      or user-controlled prompt can lead to remote code execution via prompt
+      injection.
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+    metadata:
+      category: injection
+      owasp-llm: LLM01 (Prompt Injection), LLM02 (Insecure Output Handling)
+ 
+  - id: hardcoded-llm-api-key
+    languages: [python]
+    severity: ERROR
+    message: >
+      Hardcoded API key/secret detected. Model provider credentials should be
+      loaded from environment variables or a secrets manager, never committed.
+    patterns:
+      - pattern-either:
+          - pattern: openai.api_key = "..."
+          - pattern: $X = "sk-..."
+          - pattern: os.environ["$KEY"] = "..."
+    metadata:
+      category: secrets
+      owasp-llm: LLM02 / general supply chain hygiene
+ 
+  - id: unrestricted-system-prompt-concatenation
+    languages: [python]
+    severity: WARNING
+    message: >
+      User input is being concatenated directly into a system or instruction
+      prompt without sanitization or delimiters. This is a classic prompt
+      injection vector.
+    patterns:
+      - pattern-either:
+          - pattern: $PROMPT = $SYSTEM_PROMPT + $USER_INPUT
+          - pattern: f"{$SYSTEM_PROMPT}{$USER_INPUT}"
+    metadata:
+      category: prompt-injection
+      owasp-llm: LLM01 (Prompt Injection)
+ 
+  - id: ssrf-via-llm-tool-url-fetch
+    languages: [python]
+    severity: ERROR
+    message: >
+      A URL derived from LLM output or user input is passed directly to an
+      HTTP client without allowlisting, enabling SSRF via tool-use/agent
+      capabilities.
+    patterns:
+      - pattern-either:
+          - pattern: requests.get($URL)
+          - pattern: requests.post($URL, ...)
+          - pattern: urllib.request.urlopen($URL)
+    metadata:
+      category: ssrf
+      owasp-llm: LLM08 (Excessive Agency)
