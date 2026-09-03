@@ -217,5 +217,15 @@ __marimo__/
 
 # Custom
 .python-version
-cache
-models
+
+# NOTE: previously this file also ignored `cache` and `models` outright,
+# which silently excluded the in-repo models/ folder (including the
+# MLSecOps demo artifact models/cache.pkl) from every commit. Those two
+# lines were removed. If you need to ignore a *local* runtime cache/model
+# download directory (e.g. ~/.LLMGoat/cache, ~/.LLMGoat/models referenced
+# in compose.local.yaml / compose.github.yaml), those already live outside
+# this repo under $HOME and don't need an entry here. If you specifically
+# want to ignore a local-only subfolder inside the repo without excluding
+# the whole tree, scope it precisely instead, e.g.:
+# /models/local-only/
+# /cache/local-only/
