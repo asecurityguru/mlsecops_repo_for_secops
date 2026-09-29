@@ -6,7 +6,7 @@ learning / LLM applications inside a CI/CD pipeline. It's built on top of
 LLM application based on the OWASP Top 10 for LLM Applications, with a few
 extra files added specifically to demo model-artifact scanning.
 
-It exists to answer one question on camera: **what does a security pipeline
+It exists to answer one question: **what does a security pipeline
 look like once "the app" includes a trained model, not just source code?**
 
 ## What this project actually is
@@ -20,7 +20,6 @@ the model/cache files a normal web app would never have.
 
 ## What makes this an ML/AI project (not just a web app)
 
-If you're explaining this repo out loud, these are the parts to point at:
 
 | Where | Why it's ML-specific |
 |---|---|
