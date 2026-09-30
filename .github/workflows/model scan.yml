@@ -3,8 +3,11 @@ name: Model Scan Security Scan
 on:
   pull_request:
     branches: [main, develop]
-  push:
-    branches: [main]
+
+  # Disabled: the workflow will NOT run when code is pushed/committed to main
+  # push:
+  #   branches: [main]
+
   workflow_dispatch:
 
 permissions:
