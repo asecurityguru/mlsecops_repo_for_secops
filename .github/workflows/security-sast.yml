@@ -1,33 +1,38 @@
 name: SAST Security Scan
- 
+
 on:
   pull_request:
     branches: [main, develop]
   push:
     branches: [main]
   workflow_dispatch:
- 
+
 permissions:
   contents: read
   security-events: write
   pull-requests: write
- 
+
 jobs:
+
+  # ============================================================
+  # 1. BANDIT - Python SAST
+  # ============================================================
   bandit:
     name: Bandit (Python SAST)
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
- 
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
- 
+
       - name: Install Bandit
         run: pip install bandit bandit-sarif-formatter
- 
+
       - name: Run Bandit
         run: |
           bandit -r . \
@@ -36,47 +41,91 @@ jobs:
             -ll \
             --exclude ./tests,./.venv
         continue-on-error: true
- 
+
       - name: Upload Bandit SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: bandit-results.sarif
           category: bandit
- 
+
+
+  # ============================================================
+  # 2. CODEQL - Deep SAST
+  # ============================================================
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+
     permissions:
       actions: read
       contents: read
       security-events: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
- 
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: python
           queries: security-extended
- 
+
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
- 
+
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
           category: codeql
- 
+
+
+  # ============================================================
+  # 3. SEMGREP - ML / LLM Security SAST
+  # ============================================================
+  semgrep:
+    name: Semgrep (ML/LLM SAST)
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        continue-on-error: true
+        with:
+          config: .semgrep/ml-security-rules.yml
+          generateSarif: "1"
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep-ml-security
+
+
+  # ============================================================
+  # 4. SAST SUMMARY
+  # ============================================================
   sast-summary:
     name: SAST Summary
     runs-on: ubuntu-latest
-    needs: [bandit, codeql]
+
+    needs: [bandit, codeql, semgrep]
+
     if: always()
+
     steps:
       - name: Report SAST status
         run: |
           echo "## SAST Scan Summary" >> $GITHUB_STEP_SUMMARY
           echo "- Bandit: ${{ needs.bandit.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- CodeQL: ${{ needs.codeql.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "Findings are available under the repo's Security > Code scanning tab." >> $GITHUB_STEP_SUMMARY
+          echo "- Semgrep ML/LLM: ${{ needs.semgrep.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Findings are available under the repository's Security > Code scanning tab." >> $GITHUB_STEP_SUMMARY
