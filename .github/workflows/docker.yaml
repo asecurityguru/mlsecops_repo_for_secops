@@ -2,9 +2,13 @@
 name: Create and publish a Docker image
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  # Disabled: the workflow will NOT run when a version tag (e.g. v1.0.0) is pushed
+  # push:
+  #   tags:
+  #     - "v*.*.*"
+
+  # Kept so the file stays valid; the workflow can still be started manually
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
