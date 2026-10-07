@@ -26,8 +26,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install ModelScan
-        run: pip install modelscan
+      - name: Install ModelScan with TensorFlow/H5 support
+        run: pip install "modelscan[tensorflow,h5py]"
 
       - name: Run ModelScan against models directory
         run: |
