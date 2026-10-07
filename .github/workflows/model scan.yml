@@ -1,4 +1,4 @@
-name: Model Scan Security Scan
+name: Model Security Scan
 
 on:
   pull_request:
