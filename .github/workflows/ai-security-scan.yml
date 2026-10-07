@@ -1,24 +1,42 @@
-name: Qodo AI Security Review
+name: MLSecOps Pipeline
 
 on:
-  workflow_dispatch
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
+  id-token: write
 
 jobs:
-  qodo-security:
-    name: Qodo AI Security Review
+  security-scans:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Run Qodo AI Security Review
-        uses: qodo-ai/qodo-gen-cli@v1
+      - name: Claude MLSecOps review        # <-- the pasted step goes here
+        uses: anthropics/claude-code-action@v1
         with:
-          prompt: qodo-security-review
-        env:
-          QODO_API_KEY: ${{ secrets.QODO_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are an MLSecOps reviewer for this pull request.
+            Scanner output is in the workspace: bandit-report.txt,
+            pip-audit-report.txt and picklescan-report.txt.
+
+            1. Read the three reports and the files changed in this PR.
+            2. Triage each finding: real risk or likely false positive,
+               with a severity (High / Medium / Low).
+            3. Check for issues scanners often miss:
+               - unsafe model loading (pickle, joblib, torch.load without weights_only=True)
+               - hardcoded secrets or tokens in code and notebooks
+               - model or dataset downloads with no hash or signature check
+               - LLM code that passes untrusted input into prompts or tools
+               - overly broad permissions in workflow or pipeline files
+            4. Post ONE pull request comment with a summary table:
+               Finding | File | Severity | Recommended fix.
+            Do not modify any files.
+          claude_args: >-
+            --max-turns 8
+            --allowedTools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*)"
