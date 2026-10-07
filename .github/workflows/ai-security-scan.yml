@@ -1,42 +1,103 @@
-name: MLSecOps Pipeline
+name: Claude AI Security Scan (models directory)
 
 on:
-  pull_request:
-    branches: [main, develop]
   workflow_dispatch:
+
+env:
+  SCAN_DIR: models        # change this if your folder has a different name
 
 permissions:
   contents: read
-  pull-requests: write
+  security-events: read
   id-token: write
 
 jobs:
-  security-scans:
+  claude-ai-scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Claude MLSecOps review        # <-- the pasted step goes here
+      # Baseline: existing scanner alerts, limited to the same directory
+      - name: Fetch existing alerts for the models directory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate \
+            "repos/${{ github.repository }}/code-scanning/alerts?state=open&per_page=100" \
+            | jq -s --arg dir "${SCAN_DIR}/" 'add
+                | map(select((.most_recent_instance.location.path // "") | startswith($dir)))
+                | map({
+                    number,
+                    tool: .tool.name,
+                    rule: .rule.id,
+                    severity: .rule.security_severity_level,
+                    message: .most_recent_instance.message.text,
+                    path: .most_recent_instance.location.path,
+                    start_line: .most_recent_instance.location.start_line
+                  })' > code-scanning-alerts.json \
+            || echo '[]' > code-scanning-alerts.json
+          echo "Baseline alerts in ${SCAN_DIR}/: $(jq length code-scanning-alerts.json)"
+
+      - name: Claude AI review of the models directory
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true   # remove after debugging
           prompt: |
-            You are an MLSecOps reviewer for this pull request.
-            Scanner output is in the workspace: bandit-report.txt,
-            pip-audit-report.txt and picklescan-report.txt.
+            You are a senior security engineer reviewing ML code by reading it.
+            Do not run shell commands.
 
-            1. Read the three reports and the files changed in this PR.
-            2. Triage each finding: real risk or likely false positive,
-               with a severity (High / Medium / Low).
-            3. Check for issues scanners often miss:
-               - unsafe model loading (pickle, joblib, torch.load without weights_only=True)
-               - hardcoded secrets or tokens in code and notebooks
-               - model or dataset downloads with no hash or signature check
-               - LLM code that passes untrusted input into prompts or tools
-               - overly broad permissions in workflow or pipeline files
-            4. Post ONE pull request comment with a summary table:
-               Finding | File | Severity | Recommended fix.
-            Do not modify any files.
+            SCOPE: read ONLY files inside the "${{ env.SCAN_DIR }}/" directory,
+            plus code-scanning-alerts.json. Do not read anything else in the repo.
+            Binary files (model weights, .pkl, .pt, .bin, .h5, .onnx) cannot be
+            reviewed by reading; list their names and say they need a dedicated
+            model scanner. Review all text files: Python, notebooks, configs, YAML,
+            JSON, requirements and model cards.
+
+            STEP 1 - Find vulnerabilities by reading the code
+            Look for:
+            - unsafe model loading: pickle, joblib, torch.load without
+              weights_only=True, yaml.load without SafeLoader, eval/exec on config
+            - model or dataset downloads without hash or signature verification,
+              or from untrusted URLs
+            - hardcoded secrets, tokens or credentials in code, notebooks, configs
+            - command or path injection in training, inference or export scripts
+            - insecure inference APIs: no authentication, no input validation,
+              user input passed to prompts, SQL, shell or file paths
+            - sensitive data or PII written to logs, outputs or model cards
+
+            STEP 2 - Compare with the scanners
+            Read code-scanning-alerts.json (alerts the scanners already raised for
+            this directory). Label each of your findings:
+            - "Also found by scanner" (tool and alert number), or
+            - "NEW - missed by scanners"
+            Also list scanner alerts that look like false positives, with a reason.
+
+            RULES
+            - Report only what you can point to, with file and line.
+            - Give a confidence level (High / Medium / Low). Do not invent issues.
+            - Include a short code excerpt as evidence.
+
+            OUTPUT
+            Write claude-models-scan.md with:
+            1. Summary: number of findings, "Also found" vs "NEW", and the list of
+               binary files that were not reviewed.
+            2. Findings table: ID | Title | File:Line | CWE | Severity | Confidence |
+               Scanner status.
+            3. For each NEW finding: evidence, how it could be exploited, a fix.
+            4. Possible false positives in the scanner alerts.
+            Then stop. Do not modify any other file.
           claude_args: >-
-            --max-turns 8
-            --allowedTools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*)"
+            --max-turns 15
+            --allowedTools "Read,Glob,Grep,Write"
+
+      - name: Publish report to job summary
+        if: hashFiles('claude-models-scan.md') != ''
+        run: cat claude-models-scan.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: hashFiles('claude-models-scan.md') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-models-scan
+          path: claude-models-scan.md
