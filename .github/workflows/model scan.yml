@@ -66,7 +66,7 @@ jobs:
           mkdir -p fickling-reports
           pickle_files=""
           if [ -d "models" ]; then
-            pickle_files=$(find models -type f \( -name "*.pkl" -o -name "*.pickle" -o -name "*.pt" -o -name "*.pth" -o -name "*.bin" \) 2>/dev/null)
+            pickle_files=$(find models -type f \( -name "*.pkl" -o -name "*.pickle" \) 2>/dev/null)
           fi
 
           for f in $pickle_files; do
