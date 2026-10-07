@@ -1,0 +1,26 @@
+name: Qodo AI Security Review
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  qodo-security:
+    name: Qodo AI Security Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Qodo AI Security Review
+        uses: qodo-ai/qodo-gen-cli@v1
+        with:
+          prompt: qodo-security-review
+        env:
+          QODO_API_KEY: ${{ secrets.QODO_API_KEY }}
